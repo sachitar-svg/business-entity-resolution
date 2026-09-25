@@ -16,7 +16,7 @@ SRC_DIR = (
 
 sys.path.insert(0, str(SRC_DIR))
 
-from preprocessing import normalize_name, normalize_address
+from src.preprocessing import normalize_name, normalize_address
 
 
 # =================================================

@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = PROJECT_ROOT / "code" / "business_entity_resolution" / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from preprocessing import normalize_name, normalize_address
+from src.preprocessing import normalize_name, normalize_address
 
 
 # ============================================================

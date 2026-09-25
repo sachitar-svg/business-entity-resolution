@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
 from collections import defaultdict
+import json
 
 import pandas as pd
-import json
 
 
 # ============================================================
@@ -50,7 +50,7 @@ ADDRESS_TOKEN_COUNTS_PATH = (
 
 
 # ============================================================
-# DIFFICULT CASES WE WANT TO VERIFY
+# SIX DIFFICULT CASES
 # ============================================================
 
 TARGET_IDS = [
@@ -69,10 +69,9 @@ TARGET_IDS = [
 
 def get_tokens(value, normalizer):
     """
-    Normalize text and return tokens with length >= 2.
-
-    This matches the current blocking evaluator.
+    Normalize text and return unique tokens with length >= 2.
     """
+
     normalized = normalizer(value)
 
     if not normalized:
@@ -89,10 +88,9 @@ def get_tokens(value, normalizer):
 
 def compact_text(value):
     """
-    Remove non-alphanumeric characters after name normalization.
-
-    Matches the current evaluator.
+    Normalize a name and remove non-alphanumeric characters.
     """
+
     normalized = normalize_name(value)
 
     if not normalized:
@@ -109,6 +107,7 @@ def rare_tokens(tokens, counts, max_frequency):
     """
     Return tokens whose global frequency is <= max_frequency.
     """
+
     return [
         token
         for token in tokens
@@ -118,10 +117,9 @@ def rare_tokens(tokens, counts, max_frequency):
 
 def top_two_tokens(tokens, counts):
     """
-    Pick the two least-frequent tokens.
-
-    Matches the current evaluator.
+    Select the two least-frequent tokens.
     """
+
     if not tokens:
         return []
 
@@ -137,10 +135,12 @@ def make_pair(tokens):
     """
     Create an order-independent pair from two tokens.
     """
+
     if len(tokens) < 2:
         return None
 
     a, b = sorted(tokens[:2])
+
     return f"{a}|{b}"
 
 
@@ -192,6 +192,7 @@ missing_targets = set(TARGET_IDS) - set(
 
 if missing_targets:
     print("\nWARNING: These target IDs were not found:")
+
     for entity_id in sorted(missing_targets):
         print("  ", entity_id)
 
@@ -209,8 +210,7 @@ ground_truth = pd.read_csv(
 ).fillna("")
 
 ground_truth["source1_entity_id"] = (
-    ground_truth["source1_entity_id"]
-    .astype(str)
+    ground_truth["source1_entity_id"].astype(str)
 )
 
 
@@ -311,7 +311,7 @@ for _, row in target_source1.iterrows():
 
 
 # ============================================================
-# BUILD EXACT SAME BLOCKING INDEXES
+# BUILD BLOCKING INDEXES
 # ============================================================
 
 print("\nBuilding blocking indexes from target S1 rows...")
@@ -322,6 +322,7 @@ name_single_lookup = defaultdict(set)
 name_pair_lookup = defaultdict(set)
 address_single_lookup = defaultdict(set)
 address_pair_lookup = defaultdict(set)
+
 
 for s1_id, info in query_info.items():
 
@@ -377,19 +378,24 @@ for s1_id, info in query_info.items():
 
 
 # ============================================================
-# FUNCTION TO CHECK ONE SOURCE ROW
+# GET BLOCKING MATCHES FOR ONE SOURCE ROW
 # ============================================================
 
 def get_blocking_matches(row):
     """
-    Apply the SAME six blocking mechanisms used in
+    Apply the same six blocking rules used by
     evaluate_blocking_no_numbers.py.
 
     Returns:
-        matched S1 IDs + rules responsible for each match.
+        Dictionary:
+        rule name -> set of matching S1 IDs
     """
 
     matches_by_rule = defaultdict(set)
+
+    # --------------------------------------------------------
+    # Normalize source row
+    # --------------------------------------------------------
 
     normalized_name = normalize_name(
         row["business_name"]
@@ -409,6 +415,10 @@ def get_blocking_matches(row):
         normalize_address
     )
 
+    # --------------------------------------------------------
+    # Rare tokens
+    # --------------------------------------------------------
+
     rare_name = rare_tokens(
         name_tokens,
         name_token_counts,
@@ -420,6 +430,10 @@ def get_blocking_matches(row):
         address_token_counts,
         SINGLE_TOKEN_MAX_FREQ
     )
+
+    # --------------------------------------------------------
+    # Top two tokens
+    # --------------------------------------------------------
 
     top_name = top_two_tokens(
         name_tokens,
@@ -434,31 +448,35 @@ def get_blocking_matches(row):
     name_pair = make_pair(top_name)
     address_pair = make_pair(top_address)
 
-    # --------------------------------------------------------
-    # Rule 1: Exact normalized name
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 1: EXACT NORMALIZED NAME
+    # ========================================================
 
     if normalized_name:
+
         for s1_id in exact_name_lookup.get(
             normalized_name,
             set()
         ):
+
             matches_by_rule["exact_name"].add(s1_id)
 
-    # --------------------------------------------------------
-    # Rule 2: Compact name
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 2: COMPACT NAME
+    # ========================================================
 
     if compact_name:
+
         for s1_id in compact_name_lookup.get(
             compact_name,
             set()
         ):
+
             matches_by_rule["compact_name"].add(s1_id)
 
-    # --------------------------------------------------------
-    # Rule 3: Rare name token
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 3: RARE NAME TOKEN
+    # ========================================================
 
     for token in rare_name:
 
@@ -466,11 +484,12 @@ def get_blocking_matches(row):
             token,
             set()
         ):
+
             matches_by_rule["rare_name_token"].add(s1_id)
 
-    # --------------------------------------------------------
-    # Rule 4: Name pair
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 4: NAME TOKEN PAIR
+    # ========================================================
 
     if name_pair:
 
@@ -478,11 +497,12 @@ def get_blocking_matches(row):
             name_pair,
             set()
         ):
+
             matches_by_rule["name_pair"].add(s1_id)
 
-    # --------------------------------------------------------
-    # Rule 5: Rare address token
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 5: RARE ADDRESS TOKEN
+    # ========================================================
 
     for token in rare_address:
 
@@ -490,11 +510,12 @@ def get_blocking_matches(row):
             token,
             set()
         ):
+
             matches_by_rule["rare_address_token"].add(s1_id)
 
-    # --------------------------------------------------------
-    # Rule 6: Address pair
-    # --------------------------------------------------------
+    # ========================================================
+    # RULE 6: ADDRESS TOKEN PAIR
+    # ========================================================
 
     if address_pair:
 
@@ -502,41 +523,49 @@ def get_blocking_matches(row):
             address_pair,
             set()
         ):
+
             matches_by_rule["address_pair"].add(s1_id)
 
     return matches_by_rule
 
 
 # ============================================================
-# SCAN SOURCE 2 AND SOURCE 3
+# CAPTURED MATCHES
 # ============================================================
 
-print("\nScanning Source 2 and Source 3...")
-print("This may take some time because the files are large.")
-
-
-# For every true match, store:
-#
-# candidate ID -> set of rules that captured it
-#
 captured_matches = {
     s1_id: defaultdict(set)
     for s1_id in TARGET_IDS
 }
 
 
+# ============================================================
+# PROCESS SOURCE 2 / SOURCE 3
+# ============================================================
+
 def process_source_file(source_path, source_label):
 
-    print(f"\nProcessing {source_label}: {source_path.name}")
+    print(
+        f"\nProcessing {source_label}: "
+        f"{source_path.name}"
+    )
 
     rows_processed = 0
 
-    for chunk in pd.read_csv(
+    # IMPORTANT:
+    # chunksize returns an iterator.
+    # fillna() must be applied to each chunk separately.
+
+    reader = pd.read_csv(
         source_path,
         sep="\t",
         dtype=str,
         chunksize=CHUNK_SIZE
-    ).fillna(""):
+    )
+
+    for chunk in reader:
+
+        chunk = chunk.fillna("")
 
         rows_processed += len(chunk)
 
@@ -545,8 +574,8 @@ def process_source_file(source_path, source_label):
             source_entity_id = row["entity_id"]
 
             # ------------------------------------------------
-            # We only care about source rows that appear in
-            # the ground truth of our six target entities.
+            # Only inspect source rows that are known true
+            # matches for one of our six target S1 entities.
             # ------------------------------------------------
 
             relevant_s1_ids = []
@@ -557,13 +586,14 @@ def process_source_file(source_path, source_label):
                     s1_id,
                     set()
                 ):
+
                     relevant_s1_ids.append(s1_id)
 
             if not relevant_s1_ids:
                 continue
 
             # ------------------------------------------------
-            # Apply EXACT blocking logic
+            # Apply blocking rules
             # ------------------------------------------------
 
             matches_by_rule = get_blocking_matches(row)
@@ -571,11 +601,10 @@ def process_source_file(source_path, source_label):
             # ------------------------------------------------
             # Country filtering
             #
-            # IMPORTANT:
             # Country is NOT a blocking key.
             #
-            # It is applied AFTER a blocking rule produces
-            # an S1 candidate, exactly like the evaluator.
+            # It is applied only after a blocking rule
+            # produces a candidate.
             # ------------------------------------------------
 
             source_country = row["country"]
@@ -588,6 +617,7 @@ def process_source_file(source_path, source_label):
                         query_info[s1_id]["country"]
                         == source_country
                     ):
+
                         captured_matches[s1_id][
                             source_entity_id
                         ].add(rule)
@@ -598,10 +628,19 @@ def process_source_file(source_path, source_label):
         )
 
 
+# ============================================================
+# RUN SOURCE 2
+# ============================================================
+
 process_source_file(
     SOURCE2_PATH,
     "Source 2"
 )
+
+
+# ============================================================
+# RUN SOURCE 3
+# ============================================================
 
 process_source_file(
     SOURCE3_PATH,
@@ -631,39 +670,45 @@ for s1_id in TARGET_IDS:
         print("S1 entity not found.")
         continue
 
+    true_set = true_matches.get(
+        s1_id,
+        set()
+    )
+
+    captured_set = set(
+        captured_matches[s1_id].keys()
+    )
+
+    captured = true_set & captured_set
+
+    missed = true_set - captured_set
+
     print(
         f"Country: {info['country']}"
     )
 
     print(
-        f"Normalized name: {info['normalized_name']}"
+        f"Normalized name: "
+        f"{info['normalized_name']}"
     )
 
     print(
-        f"True matches: {len(true_matches.get(s1_id, set()))}"
+        f"True matches: "
+        f"{len(true_set)}"
     )
 
     print(
         f"Captured true matches: "
-        f"{len(captured_matches[s1_id])}"
-    )
-
-    missed = (
-        true_matches.get(s1_id, set())
-        - set(captured_matches[s1_id].keys())
-    )
-
-    captured = (
-        true_matches.get(s1_id, set())
-        & set(captured_matches[s1_id].keys())
+        f"{len(captured)}"
     )
 
     print(
-        f"Missed true matches: {len(missed)}"
+        f"Missed true matches: "
+        f"{len(missed)}"
     )
 
     # --------------------------------------------------------
-    # Captured matches
+    # Captured
     # --------------------------------------------------------
 
     if captured:
@@ -682,7 +727,7 @@ for s1_id in TARGET_IDS:
             )
 
     # --------------------------------------------------------
-    # Missed matches
+    # Missed
     # --------------------------------------------------------
 
     if missed:
@@ -700,21 +745,17 @@ for s1_id in TARGET_IDS:
     # Recall
     # --------------------------------------------------------
 
-    total_true = len(
-        true_matches.get(s1_id, set())
-    )
-
-    if total_true > 0:
+    if true_set:
 
         recall = (
             len(captured)
-            / total_true
+            / len(true_set)
         )
 
         print(
             f"\nBlocking recall for {s1_id}: "
             f"{recall:.4f} "
-            f"({len(captured)}/{total_true})"
+            f"({len(captured)}/{len(true_set)})"
         )
 
 
@@ -730,10 +771,14 @@ print("=" * 80)
 print("OVERALL SUMMARY")
 print("=" * 80)
 
+
 for s1_id in TARGET_IDS:
 
     true_count = len(
-        true_matches.get(s1_id, set())
+        true_matches.get(
+            s1_id,
+            set()
+        )
     )
 
     captured_count = len(
@@ -757,6 +802,7 @@ if total_true_matches > 0:
     )
 
     print("\nOverall blocking recall:")
+
     print(
         f"{overall_recall:.4f} "
         f"({total_captured_matches}/"

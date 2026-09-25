@@ -6,15 +6,22 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# ==========================================
 # Virtual environments
+# ==========================================
+
 venv/
 env/
 .venv/
 ent/
 
-# Environment variables
+# ==========================================
+# Environment variables / secrets
+# ==========================================
+
 .env
 .env.*
+!.env.example
 
 # ==========================================
 # Jupyter
@@ -23,17 +30,27 @@ ent/
 .ipynb_checkpoints/
 
 # ==========================================
-# Dataset files
+# Challenge datasets / large data files
 # ==========================================
 
-# Challenge datasets - do NOT push large/private data
 dataset/
+
 *.csv
 *.tsv
 *.parquet
-*.json
 *.xlsx
 *.xls
+
+# ==========================================
+# JSON files
+# ==========================================
+
+*.json
+
+# Keep project token statistics
+!code/business_entity_resolution/data/
+!code/business_entity_resolution/data/token_stats/
+!code/business_entity_resolution/data/token_stats/*.json
 
 # ==========================================
 # Generated data / results
@@ -45,20 +62,12 @@ output/
 outputs/
 logs/
 
-# Keep token statistics if they are intentionally
-# part of the project
-!code/business_entity_resolution/data/
-!code/business_entity_resolution/data/token_stats/
-!code/business_entity_resolution/data/token_stats/*.json
-
 # ==========================================
 # IDE / Editor
 # ==========================================
 
 .vscode/
 .idea/
-
-# VS Code settings that may contain local paths
 *.code-workspace
 
 # ==========================================

@@ -2,6 +2,7 @@ import re
 import unicodedata
 import pandas as pd
 
+
 def normalize_text(value):
     """
     Unicode-safe normalization that also handles pandas NaN values.
@@ -42,7 +43,6 @@ def normalize_name(value):
     """
     Normalize business names.
     """
-
     return normalize_text(value)
 
 
@@ -50,7 +50,6 @@ def normalize_address(value):
     """
     Normalize business addresses.
     """
-
     return normalize_text(value)
 
 

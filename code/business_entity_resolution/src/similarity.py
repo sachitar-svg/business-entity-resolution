@@ -3,6 +3,8 @@ from rapidfuzz import fuzz
 from preprocessing import normalize_name, normalize_address
 
 
+
+
 def name_similarity(name1, name2):
     """
     Calculate similarity between two business names.
@@ -51,7 +53,6 @@ def country_match(country1, country2):
 
 if __name__ == "__main__":
 
-    # Example from our actual dataset
     s1_name = "Payne Enterprises"
     s2_name = "PAYNE-ENRTPRMISES"
 
@@ -63,13 +64,25 @@ if __name__ == "__main__":
     print("\nName:")
     print(s1_name)
     print(s2_name)
-    print("Similarity:", name_similarity(s1_name, s2_name))
+    print(
+        "Similarity:",
+        name_similarity(s1_name, s2_name)
+    )
 
     print("\nAddress:")
     print(s1_address)
     print(s2_address)
-    print("Similarity:", address_similarity(s1_address, s2_address))
+    print(
+        "Similarity:",
+        address_similarity(
+            s1_address,
+            s2_address
+        )
+    )
 
     print("\nCountry:")
     print("US vs US")
-    print("Match:", country_match("US", "US"))
+    print(
+        "Match:",
+        country_match("US", "US")
+    )

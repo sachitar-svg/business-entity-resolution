@@ -109,3 +109,4 @@ dist/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+output.zip

@@ -387,146 +387,147 @@ def calculate_features(
         "candidate_address_missing": candidate_address_missing,
     }
 
-# ============================================================
-# LOAD DATA
-# ============================================================
+if __name__ == "__main__":
+    # ============================================================
+    # LOAD DATA
+    # ============================================================
 
-print("=" * 70)
-print("MATCHING FEATURE TEST")
-print("=" * 70)
+    print("=" * 70)
+    print("MATCHING FEATURE TEST")
+    print("=" * 70)
 
-print("\nLoading Source 1...")
+    print("\nLoading Source 1...")
 
-s1 = pd.read_csv(
-    S1_PATH,
-    sep="\t"
-)
-
-print(
-    f"Source 1 records: {len(s1):,}"
-)
-
-print("\nLoading Source 2...")
-
-s2 = pd.read_csv(
-    S2_PATH,
-    sep="\t"
-)
-
-print(
-    f"Source 2 records: {len(s2):,}"
-)
-
-# ============================================================
-# SMALL TEST SAMPLE
-# ============================================================
-
-print(
-    f"\nSelecting {SAMPLE_SIZE} Source 1 records..."
-)
-
-s1_sample = s1.sample(
-    n=min(
-        SAMPLE_SIZE,
-        len(s1)
-    ),
-    random_state=RANDOM_STATE
-).reset_index(drop=True)
-
-# ============================================================
-# TEMPORARY TEST
-#
-# IMPORTANT:
-# We are NOT doing full candidate generation yet.
-#
-# This simply tests the feature calculation against
-# a small number of Source 2 records.
-# ============================================================
-
-s2_sample = s2.head(50).copy()
-
-# ============================================================
-# CALCULATE FEATURES
-# ============================================================
-
-feature_rows = []
-
-print("\nCalculating test features...")
-
-for _, s1_row in s1_sample.iterrows():
-
-    for _, candidate_row in s2_sample.iterrows():
-
-        features = calculate_features(
-            s1_row,
-            candidate_row
-        )
-
-        feature_rows.append(
-            features
-        )
-
-features_df = pd.DataFrame(
-    feature_rows
-)
-
-# ============================================================
-# DISPLAY RESULTS
-# ============================================================
-
-print("\n" + "=" * 70)
-print("FEATURE TEST RESULTS")
-print("=" * 70)
-
-print(
-    f"\nFeature rows generated: "
-    f"{len(features_df):,}"
-)
-
-print(
-    f"Feature columns: "
-    f"{len(features_df.columns):,}"
-)
-
-print("\nColumns:")
-
-for column in features_df.columns:
-
-    print(
-        f"  - {column}"
+    s1 = pd.read_csv(
+        S1_PATH,
+        sep="\t"
     )
 
-print("\nFirst 10 rows:")
+    print(
+        f"Source 1 records: {len(s1):,}"
+    )
 
-print(
-    features_df
-    .head(10)
-    .to_string(index=False)
-)
+    print("\nLoading Source 2...")
 
-# ============================================================
-# BASIC STATISTICS
-# ============================================================
+    s2 = pd.read_csv(
+        S2_PATH,
+        sep="\t"
+    )
 
-print("\n" + "=" * 70)
-print("FEATURE STATISTICS")
-print("=" * 70)
+    print(
+        f"Source 2 records: {len(s2):,}"
+    )
 
-numeric_columns = [
-    column
-    for column in features_df.columns
-    if column not in {
-        "s1_id",
-        "candidate_id"
-    }
-]
+    # ============================================================
+    # SMALL TEST SAMPLE
+    # ============================================================
 
-print(
-    features_df[
-        numeric_columns
-    ].describe()
-    .T
-    .to_string()
-)
+    print(
+        f"\nSelecting {SAMPLE_SIZE} Source 1 records..."
+    )
 
-print("\nDone.")
+    s1_sample = s1.sample(
+        n=min(
+            SAMPLE_SIZE,
+            len(s1)
+        ),
+        random_state=RANDOM_STATE
+    ).reset_index(drop=True)
+
+    # ============================================================
+    # TEMPORARY TEST
+    #
+    # IMPORTANT:
+    # We are NOT doing full candidate generation yet.
+    #
+    # This simply tests the feature calculation against
+    # a small number of Source 2 records.
+    # ============================================================
+
+    s2_sample = s2.head(50).copy()
+
+    # ============================================================
+    # CALCULATE FEATURES
+    # ============================================================
+
+    feature_rows = []
+
+    print("\nCalculating test features...")
+
+    for _, s1_row in s1_sample.iterrows():
+
+        for _, candidate_row in s2_sample.iterrows():
+
+            features = calculate_features(
+                s1_row,
+                candidate_row
+            )
+
+            feature_rows.append(
+                features
+            )
+
+    features_df = pd.DataFrame(
+        feature_rows
+    )
+
+    # ============================================================
+    # DISPLAY RESULTS
+    # ============================================================
+
+    print("\n" + "=" * 70)
+    print("FEATURE TEST RESULTS")
+    print("=" * 70)
+
+    print(
+        f"\nFeature rows generated: "
+        f"{len(features_df):,}"
+    )
+
+    print(
+        f"Feature columns: "
+        f"{len(features_df.columns):,}"
+    )
+
+    print("\nColumns:")
+
+    for column in features_df.columns:
+
+        print(
+            f"  - {column}"
+        )
+
+    print("\nFirst 10 rows:")
+
+    print(
+        features_df
+        .head(10)
+        .to_string(index=False)
+    )
+
+    # ============================================================
+    # BASIC STATISTICS
+    # ============================================================
+
+    print("\n" + "=" * 70)
+    print("FEATURE STATISTICS")
+    print("=" * 70)
+
+    numeric_columns = [
+        column
+        for column in features_df.columns
+        if column not in {
+            "s1_id",
+            "candidate_id"
+        }
+    ]
+
+    print(
+        features_df[
+            numeric_columns
+        ].describe()
+        .T
+        .to_string()
+    )
+
+    print("\nDone.")

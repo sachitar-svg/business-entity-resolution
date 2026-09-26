@@ -1,6 +1,6 @@
 from pathlib import Path
-from collections import defaultdict
 import argparse
+import csv
 import json
 import sqlite3
 import time
@@ -15,7 +15,16 @@ import pyarrow.parquet as pq
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-NORMALIZED_DIR = PROJECT_ROOT / "output" / "normalized"
+NORMALIZED_DIR = (
+    PROJECT_ROOT
+    / "output"
+    / "normalized"
+)
+
+SOURCE1_PATH = (
+    NORMALIZED_DIR
+    / "train_source1_normalized.parquet"
+)
 
 SOURCE2_PATH = (
     NORMALIZED_DIR
@@ -25,11 +34,6 @@ SOURCE2_PATH = (
 SOURCE3_PATH = (
     NORMALIZED_DIR
     / "train_source3_normalized.parquet"
-)
-
-SOURCE1_PATH = (
-    NORMALIZED_DIR
-    / "train_source1_normalized.parquet"
 )
 
 TOKEN_STATS_DIR = (
@@ -71,6 +75,8 @@ PARQUET_BATCH_SIZE = 100_000
 # Number of rows inserted into SQLite per transaction.
 SQLITE_BATCH_SIZE = 5_000
 
+# Version used to verify that an existing index matches
+# the current blocking configuration.
 INDEX_VERSION = "v2_2026_09"
 
 
@@ -79,6 +85,10 @@ INDEX_VERSION = "v2_2026_09"
 # ============================================================
 
 def safe_text(value):
+    """
+    Convert a value into clean string text.
+    """
+
     if value is None:
         return ""
 
@@ -89,16 +99,18 @@ def safe_text(value):
 
 
 def clean_country(value):
+    """
+    Normalize country value for comparison.
+    """
+
     return safe_text(value).casefold()
 
 
 def get_tokens(value):
     """
-    Normalized text -> unique tokens.
+    Convert normalized text into unique tokens.
 
-    Tokens shorter than 2 characters are ignored,
-    matching the project tokenization used by the
-    teammate feature/blocking utilities.
+    Tokens shorter than 2 characters are ignored.
     """
 
     value = safe_text(value)
@@ -113,19 +125,29 @@ def get_tokens(value):
     }
 
 
-def rare_tokens(tokens, counts, max_frequency):
+def rare_tokens(
+    tokens,
+    counts,
+    max_frequency,
+):
     """
-    Return tokens whose global frequency <= max_frequency.
+    Return tokens whose global frequency is <= max_frequency.
     """
 
     return {
         token
         for token in tokens
-        if counts.get(token, 10**18) <= max_frequency
+        if counts.get(
+            token,
+            10**18
+        ) <= max_frequency
     }
 
 
-def rarest_two_tokens(tokens, counts):
+def rarest_two_tokens(
+    tokens,
+    counts,
+):
     """
     Select the two globally rarest tokens.
 
@@ -138,23 +160,30 @@ def rarest_two_tokens(tokens, counts):
     ordered = sorted(
         tokens,
         key=lambda token: (
-            counts.get(token, 10**18),
-            token
-        )
+            counts.get(
+                token,
+                10**18
+            ),
+            token,
+        ),
     )
 
-    return tuple(ordered[:2])
+    return tuple(
+        ordered[:2]
+    )
 
 
 def make_pair(tokens):
     """
-    Canonical pair representation.
+    Create a canonical pair representation.
     """
 
     if len(tokens) != 2:
         return None
 
-    return tuple(sorted(tokens))
+    return tuple(
+        sorted(tokens)
+    )
 
 
 # ============================================================
@@ -181,25 +210,30 @@ def build_block_terms(
     6. Top-two / pair-based address key
 
     Numeric blocking is intentionally NOT included.
-    Relaxed 25k/50k rules are also intentionally NOT included.
+
+    Relaxed 25k/50k address rules are also intentionally
+    NOT included.
     """
 
     terms = set()
 
     # --------------------------------------------------------
     # 1. Exact normalized name
-    #
-    # Convert spaces to underscores so the entire normalized
-    # name becomes one FTS token.
     # --------------------------------------------------------
 
     if norm_name:
+
         exact_key = (
             "nexact_"
-            + norm_name.replace(" ", "_")
+            + norm_name.replace(
+                " ",
+                "_"
+            )
         )
 
-        terms.add(exact_key)
+        terms.add(
+            exact_key
+        )
 
     # --------------------------------------------------------
     # 2. Compact name
@@ -212,7 +246,9 @@ def build_block_terms(
             + compact_name
         )
 
-        terms.add(compact_key)
+        terms.add(
+            compact_key
+        )
 
     # --------------------------------------------------------
     # Name tokens
@@ -229,11 +265,12 @@ def build_block_terms(
     for token in rare_tokens(
         name_tokens,
         name_counts,
-        SINGLE_TOKEN_MAX_FREQ
+        SINGLE_TOKEN_MAX_FREQ,
     ):
 
         terms.add(
-            "nrare_" + token
+            "nrare_"
+            + token
         )
 
     # --------------------------------------------------------
@@ -243,7 +280,7 @@ def build_block_terms(
     name_pair = make_pair(
         rarest_two_tokens(
             name_tokens,
-            name_counts
+            name_counts,
         )
     )
 
@@ -271,11 +308,12 @@ def build_block_terms(
     for token in rare_tokens(
         address_tokens,
         address_counts,
-        SINGLE_TOKEN_MAX_FREQ
+        SINGLE_TOKEN_MAX_FREQ,
     ):
 
         terms.add(
-            "arare_" + token
+            "arare_"
+            + token
         )
 
     # --------------------------------------------------------
@@ -285,7 +323,7 @@ def build_block_terms(
     address_pair = make_pair(
         rarest_two_tokens(
             address_tokens,
-            address_counts
+            address_counts,
         )
     )
 
@@ -324,12 +362,15 @@ def check_fts5(connection):
     except sqlite3.OperationalError as exc:
 
         raise RuntimeError(
-            "SQLite FTS5 is not available in this Python "
-            "installation."
+            "SQLite FTS5 is not available in this "
+            "Python installation."
         ) from exc
 
 
 def configure_sqlite(connection):
+    """
+    Configure SQLite for this indexing workload.
+    """
 
     connection.execute(
         "PRAGMA journal_mode=WAL"
@@ -353,6 +394,9 @@ def configure_sqlite(connection):
 
 
 def create_schema(connection):
+    """
+    Create all required SQLite tables.
+    """
 
     connection.execute(
         """
@@ -387,15 +431,19 @@ def create_schema(connection):
 
 
 def remove_old_index(index_path):
+    """
+    Remove an existing SQLite database and its WAL files.
+    """
 
     for suffix in (
         "",
         "-wal",
-        "-shm"
+        "-shm",
     ):
 
         path = Path(
-            str(index_path) + suffix
+            str(index_path)
+            + suffix
         )
 
         if path.exists():
@@ -407,10 +455,22 @@ def build_index(
     name_counts,
     address_counts,
 ):
+    """
+    Build the disk-backed SQLite/FTS5 V2 index.
+    """
 
-    print("\n" + "=" * 70)
-    print("BUILDING V2 SQLITE / FTS5 INDEX")
-    print("=" * 70)
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "BUILDING V2 SQLITE / FTS5 INDEX"
+    )
+
+    print(
+        "=" * 70
+    )
 
     index_path.parent.mkdir(
         parents=True,
@@ -440,7 +500,6 @@ def build_index(
         )
 
         next_rowid = 1
-
         total_rows = 0
 
         insert_records = []
@@ -448,15 +507,14 @@ def build_index(
 
         overall_start = time.time()
 
-
         for source_path, source_label in [
             (
                 SOURCE2_PATH,
-                "Source 2"
+                "Source 2",
             ),
             (
                 SOURCE3_PATH,
-                "Source 3"
+                "Source 3",
             ),
         ]:
 
@@ -481,7 +539,7 @@ def build_index(
                         "norm_address",
                     ],
                 ),
-                start=1
+                start=1,
             ):
 
                 chunk = batch.to_pandas()
@@ -522,7 +580,9 @@ def build_index(
                     )
 
                     block_text = " ".join(
-                        sorted(block_terms)
+                        sorted(
+                            block_terms
+                        )
                     )
 
                     insert_records.append(
@@ -542,7 +602,6 @@ def build_index(
 
                     next_rowid += 1
                     total_rows += 1
-
 
                     if (
                         len(insert_records)
@@ -577,7 +636,6 @@ def build_index(
                         insert_records.clear()
                         insert_fts.clear()
 
-
                 print(
                     f"  Batch {batch_number:>3}"
                     f" | indexed rows: "
@@ -586,12 +644,10 @@ def build_index(
 
                 del chunk
 
-
             print(
                 f"{source_label} completed in "
                 f"{time.time() - source_start:.1f}s"
             )
-
 
         # ----------------------------------------------------
         # Flush final batch
@@ -624,6 +680,9 @@ def build_index(
 
             connection.commit()
 
+        # ----------------------------------------------------
+        # Optimize FTS
+        # ----------------------------------------------------
 
         print(
             "\nOptimizing FTS index..."
@@ -638,7 +697,6 @@ def build_index(
 
         connection.commit()
 
-
         # ----------------------------------------------------
         # Store metadata
         # ----------------------------------------------------
@@ -649,30 +707,45 @@ def build_index(
                 INDEX_VERSION,
 
             "single_token_max_freq":
-                str(SINGLE_TOKEN_MAX_FREQ),
+                str(
+                    SINGLE_TOKEN_MAX_FREQ
+                ),
 
             "source2_size":
-                str(SOURCE2_PATH.stat().st_size),
+                str(
+                    SOURCE2_PATH.stat().st_size
+                ),
 
             "source3_size":
-                str(SOURCE3_PATH.stat().st_size),
+                str(
+                    SOURCE3_PATH.stat().st_size
+                ),
 
             "source2_mtime":
-                str(SOURCE2_PATH.stat().st_mtime_ns),
+                str(
+                    SOURCE2_PATH.stat().st_mtime_ns
+                ),
 
             "source3_mtime":
-                str(SOURCE3_PATH.stat().st_mtime_ns),
+                str(
+                    SOURCE3_PATH.stat().st_mtime_ns
+                ),
 
             "name_stats_mtime":
-                str(NAME_STATS_PATH.stat().st_mtime_ns),
+                str(
+                    NAME_STATS_PATH.stat().st_mtime_ns
+                ),
 
             "address_stats_mtime":
-                str(ADDRESS_STATS_PATH.stat().st_mtime_ns),
+                str(
+                    ADDRESS_STATS_PATH.stat().st_mtime_ns
+                ),
 
             "candidate_count":
-                str(total_rows),
+                str(
+                    total_rows
+                ),
         }
-
 
         connection.executemany(
             """
@@ -682,11 +755,10 @@ def build_index(
             )
             VALUES (?, ?)
             """,
-            metadata.items()
+            metadata.items(),
         )
 
         connection.commit()
-
 
         print(
             "\nTotal candidate records indexed: "
@@ -704,6 +776,10 @@ def build_index(
 
 
 def index_is_valid(index_path):
+    """
+    Check whether the existing SQLite index matches
+    the current V2 configuration and source files.
+    """
 
     if not index_path.exists():
         return False
@@ -726,33 +802,46 @@ def index_is_valid(index_path):
 
             connection.close()
 
-
         required = {
+
             "index_version":
                 INDEX_VERSION,
 
             "single_token_max_freq":
-                str(SINGLE_TOKEN_MAX_FREQ),
+                str(
+                    SINGLE_TOKEN_MAX_FREQ
+                ),
 
             "source2_size":
-                str(SOURCE2_PATH.stat().st_size),
+                str(
+                    SOURCE2_PATH.stat().st_size
+                ),
 
             "source3_size":
-                str(SOURCE3_PATH.stat().st_size),
+                str(
+                    SOURCE3_PATH.stat().st_size
+                ),
 
             "source2_mtime":
-                str(SOURCE2_PATH.stat().st_mtime_ns),
+                str(
+                    SOURCE2_PATH.stat().st_mtime_ns
+                ),
 
             "source3_mtime":
-                str(SOURCE3_PATH.stat().st_mtime_ns),
+                str(
+                    SOURCE3_PATH.stat().st_mtime_ns
+                ),
 
             "name_stats_mtime":
-                str(NAME_STATS_PATH.stat().st_mtime_ns),
+                str(
+                    NAME_STATS_PATH.stat().st_mtime_ns
+                ),
 
             "address_stats_mtime":
-                str(ADDRESS_STATS_PATH.stat().st_mtime_ns),
+                str(
+                    ADDRESS_STATS_PATH.stat().st_mtime_ns
+                ),
         }
-
 
         return all(
             rows.get(key) == value
@@ -762,7 +851,7 @@ def index_is_valid(index_path):
     except (
         sqlite3.Error,
         OSError,
-        KeyError
+        KeyError,
     ):
 
         return False
@@ -773,13 +862,18 @@ def index_is_valid(index_path):
 # ============================================================
 
 def quote_fts_term(term):
+    """
+    Quote an FTS5 search term safely.
+    """
 
     escaped = term.replace(
         '"',
         '""'
     )
 
-    return f'"{escaped}"'
+    return (
+        f'"{escaped}"'
+    )
 
 
 def build_query(
@@ -836,13 +930,76 @@ def fetch_candidates(
         (
             match_query,
             country,
-        )
+        ),
     ).fetchall()
 
     return [
         row[0]
         for row in rows
     ]
+
+
+# ============================================================
+# EXACT S1 ID LOADING
+# ============================================================
+
+def load_s1_ids(ids_path):
+    """
+    Load exact Source-1 entity IDs from a CSV file.
+
+    Expected column:
+
+        s1_id
+    """
+
+    ids = []
+
+    with open(
+        ids_path,
+        "r",
+        encoding="utf-8",
+        newline="",
+    ) as file:
+
+        reader = csv.DictReader(
+            file
+        )
+
+        if not reader.fieldnames:
+
+            raise ValueError(
+                "The S1 IDs file has no header."
+            )
+
+        if "s1_id" not in reader.fieldnames:
+
+            raise ValueError(
+                "S1 IDs file must contain a "
+                "column named 's1_id'."
+            )
+
+        for row in reader:
+
+            s1_id = safe_text(
+                row.get(
+                    "s1_id"
+                )
+            )
+
+            if s1_id:
+
+                ids.append(
+                    s1_id
+                )
+
+    if not ids:
+
+        raise ValueError(
+            "No valid S1 IDs were found in "
+            "the IDs file."
+        )
+
+    return ids
 
 
 # ============================================================
@@ -855,7 +1012,21 @@ def generate_candidates(
     name_counts,
     address_counts,
     s1_limit,
+    s1_ids=None,
 ):
+    """
+    Generate candidate entity IDs for Source 1.
+
+    Two modes are supported:
+
+    1. Normal mode:
+       Process the first --s1-limit rows.
+
+    2. Exact-ID mode:
+       When s1_ids is supplied, process ONLY those
+       Source-1 entity IDs. This mode takes priority over
+       --s1-limit.
+    """
 
     connection = sqlite3.connect(
         str(index_path)
@@ -865,24 +1036,44 @@ def generate_candidates(
 
         output_path.parent.mkdir(
             parents=True,
-            exist_ok=True
+            exist_ok=True,
         )
 
         total_s1 = 0
         total_pairs = 0
         zero_candidate_s1 = 0
 
+        # ----------------------------------------------------
+        # Exact Source-1 ID mode
+        # ----------------------------------------------------
+
+        if s1_ids is not None:
+
+            target_s1_ids = set(
+                s1_ids
+            )
+
+            if not target_s1_ids:
+
+                raise ValueError(
+                    "The exact S1 ID list is empty."
+                )
+
+        else:
+
+            target_s1_ids = None
+
+        processed_s1_ids = set()
+
         start_time = time.time()
 
-
         # ----------------------------------------------------
-        # We read Source 1 from normalized Parquet.
+        # Read Source 1 from normalized Parquet
         # ----------------------------------------------------
 
         parquet_file = pq.ParquetFile(
             SOURCE1_PATH
         )
-
 
         with open(
             output_path,
@@ -897,7 +1088,6 @@ def generate_candidates(
                 "candidate_entity_ids\n"
             )
 
-
             for batch_number, batch in enumerate(
                 parquet_file.iter_batches(
                     batch_size=PARQUET_BATCH_SIZE,
@@ -909,22 +1099,14 @@ def generate_candidates(
                         "norm_address",
                     ],
                 ),
-                start=1
+                start=1,
             ):
 
                 chunk = batch.to_pandas()
 
-
                 for row in chunk.itertuples(
                     index=False
                 ):
-
-                    if (
-                        s1_limit > 0
-                        and total_s1 >= s1_limit
-                    ):
-                        break
-
 
                     s1_id = safe_text(
                         row.entity_id
@@ -933,6 +1115,33 @@ def generate_candidates(
                     if not s1_id:
                         continue
 
+                    # ------------------------------------------------
+                    # EXACT-ID MODE
+                    # ------------------------------------------------
+                    #
+                    # When an exact list is supplied, skip every
+                    # Source-1 row not present in that list.
+                    # ------------------------------------------------
+
+                    if target_s1_ids is not None:
+
+                        if s1_id not in target_s1_ids:
+                            continue
+
+                        if s1_id in processed_s1_ids:
+                            continue
+
+                    # ------------------------------------------------
+                    # NORMAL LIMIT MODE
+                    # ------------------------------------------------
+
+                    else:
+
+                        if (
+                            s1_limit > 0
+                            and total_s1 >= s1_limit
+                        ):
+                            break
 
                     country = clean_country(
                         row.country
@@ -950,9 +1159,8 @@ def generate_candidates(
                         row.norm_address
                     )
 
-
                     # ------------------------------------------------
-                    # V2 query
+                    # Build V2 query
                     # ------------------------------------------------
 
                     match_query = build_query(
@@ -963,6 +1171,9 @@ def generate_candidates(
                         address_counts,
                     )
 
+                    # ------------------------------------------------
+                    # Fetch candidates
+                    # ------------------------------------------------
 
                     candidates = fetch_candidates(
                         connection,
@@ -970,16 +1181,22 @@ def generate_candidates(
                         country,
                     )
 
+                    # ------------------------------------------------
+                    # Remove duplicates and sort for deterministic
+                    # output.
+                    # ------------------------------------------------
 
-                    # Deterministic output.
                     candidates = sorted(
                         set(candidates)
                     )
 
-
                     if not candidates:
+
                         zero_candidate_s1 += 1
 
+                    # ------------------------------------------------
+                    # Write required candidate-pair format
+                    # ------------------------------------------------
 
                     output_file.write(
                         s1_id
@@ -988,13 +1205,25 @@ def generate_candidates(
                         + "\n"
                     )
 
-
                     total_pairs += len(
                         candidates
                     )
 
                     total_s1 += 1
 
+                    # ------------------------------------------------
+                    # Track exact IDs that have been processed.
+                    # ------------------------------------------------
+
+                    if target_s1_ids is not None:
+
+                        processed_s1_ids.add(
+                            s1_id
+                        )
+
+                    # ------------------------------------------------
+                    # Progress
+                    # ------------------------------------------------
 
                     if total_s1 % 100 == 0:
 
@@ -1012,16 +1241,84 @@ def generate_candidates(
                             f"{mean_candidates:,.2f}"
                         )
 
-
                 del chunk
 
+                # ----------------------------------------------------
+                # STOP AFTER ALL EXACT IDS ARE FOUND
+                # ----------------------------------------------------
 
                 if (
-                    s1_limit > 0
+                    target_s1_ids is not None
+                    and processed_s1_ids
+                    >= target_s1_ids
+                ):
+                    break
+
+                # ----------------------------------------------------
+                # NORMAL --s1-limit STOP CONDITION
+                # ----------------------------------------------------
+
+                if (
+                    target_s1_ids is None
+                    and s1_limit > 0
                     and total_s1 >= s1_limit
                 ):
                     break
 
+        # --------------------------------------------------------
+        # Verify exact-ID coverage
+        # --------------------------------------------------------
+
+        if target_s1_ids is not None:
+
+            missing_ids = (
+                target_s1_ids
+                - processed_s1_ids
+            )
+
+            if missing_ids:
+
+                print(
+                    "\nWARNING:"
+                )
+
+                print(
+                    f"Requested exact S1 IDs : "
+                    f"{len(target_s1_ids):,}"
+                )
+
+                print(
+                    f"Processed exact S1 IDs : "
+                    f"{len(processed_s1_ids):,}"
+                )
+
+                print(
+                    f"Missing S1 IDs          : "
+                    f"{len(missing_ids):,}"
+                )
+
+                print(
+                    "\nFirst missing IDs:"
+                )
+
+                for missing_id in sorted(
+                    missing_ids
+                )[:10]:
+
+                    print(
+                        f"  {missing_id}"
+                    )
+
+            else:
+
+                print(
+                    "\nAll requested exact S1 IDs "
+                    "were processed successfully."
+                )
+
+        # --------------------------------------------------------
+        # Final statistics
+        # --------------------------------------------------------
 
         mean_candidates = (
             total_pairs / total_s1
@@ -1029,13 +1326,21 @@ def generate_candidates(
             else 0.0
         )
 
-
-        print("\n" + "=" * 70)
-        print("CANDIDATE GENERATION COMPLETE")
-        print("=" * 70)
+        print(
+            "\n"
+            + "=" * 70
+        )
 
         print(
-            f"S1 records processed      : "
+            "CANDIDATE GENERATION COMPLETE"
+        )
+
+        print(
+            "=" * 70
+        )
+
+        print(
+            f"S1 records processed       : "
             f"{total_s1:,}"
         )
 
@@ -1098,16 +1403,31 @@ def main():
         type=int,
         default=1000,
         help=(
-            "Number of Source-1 rows to process. "
+            "Number of Source-1 rows to process when "
+            "--s1-ids-file is not supplied. "
             "Use 0 for the full Source-1 dataset. "
             "Default: 1000 for safety."
         ),
     )
 
     parser.add_argument(
+        "--s1-ids-file",
+        type=str,
+        default=None,
+        help=(
+            "CSV file containing exact Source-1 IDs "
+            "in a column named 's1_id'. "
+            "When supplied, this takes priority "
+            "over --s1-limit."
+        ),
+    )
+
+    parser.add_argument(
         "--output",
         type=str,
-        default=str(DEFAULT_OUTPUT_PATH),
+        default=str(
+            DEFAULT_OUTPUT_PATH
+        ),
         help=(
             "Output candidate TSV path."
         ),
@@ -1116,14 +1436,15 @@ def main():
     parser.add_argument(
         "--index",
         type=str,
-        default=str(DEFAULT_INDEX_PATH),
+        default=str(
+            DEFAULT_INDEX_PATH
+        ),
         help=(
             "SQLite index path."
         ),
     )
 
     args = parser.parse_args()
-
 
     output_path = Path(
         args.output
@@ -1133,6 +1454,19 @@ def main():
         args.index
     )
 
+    # --------------------------------------------------------
+    # Load exact S1 IDs if supplied
+    # --------------------------------------------------------
+
+    s1_ids = None
+
+    if args.s1_ids_file:
+
+        s1_ids = load_s1_ids(
+            Path(
+                args.s1_ids_file
+            )
+        )
 
     # --------------------------------------------------------
     # Validate required files
@@ -1154,34 +1488,58 @@ def main():
                 f"Required file not found:\n{path}"
             )
 
-
-    print("=" * 70)
-    print("V2 CANDIDATE GENERATION")
-    print("=" * 70)
+    # --------------------------------------------------------
+    # Print configuration
+    # --------------------------------------------------------
 
     print(
-        f"Token threshold       : "
+        "=" * 70
+    )
+
+    print(
+        "V2 CANDIDATE GENERATION"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    print(
+        f"Token threshold        : "
         f"{SINGLE_TOKEN_MAX_FREQ:,}"
     )
 
-    print(
-        f"S1 limit              : "
-        f"{args.s1_limit:,}"
-        if args.s1_limit > 0
-        else
-        "S1 limit              : FULL DATASET"
-    )
+    if s1_ids is not None:
+
+        print(
+            f"Exact S1 IDs loaded    : "
+            f"{len(s1_ids):,}"
+        )
+
+        print(
+            "S1 limit               : "
+            "IGNORED (exact ID mode)"
+        )
+
+    else:
+
+        print(
+            f"S1 limit               : "
+            f"{args.s1_limit:,}"
+            if args.s1_limit > 0
+            else
+            "S1 limit               : FULL DATASET"
+        )
 
     print(
-        f"Index                 : "
+        f"Index                  : "
         f"{index_path}"
     )
 
     print(
-        f"Output                : "
+        f"Output                 : "
         f"{output_path}"
     )
-
 
     # --------------------------------------------------------
     # Load token statistics
@@ -1197,7 +1555,6 @@ def main():
             file
         )
 
-
     with open(
         ADDRESS_STATS_PATH,
         "r",
@@ -1207,7 +1564,6 @@ def main():
         address_counts = json.load(
             file
         )
-
 
     print(
         f"\nName token frequencies : "
@@ -1219,14 +1575,15 @@ def main():
         f"{len(address_counts):,}"
     )
 
-
     # --------------------------------------------------------
-    # Build/reuse index
+    # Build or reuse SQLite/FTS5 index
     # --------------------------------------------------------
 
     if (
         args.rebuild_index
-        or not index_is_valid(index_path)
+        or not index_is_valid(
+            index_path
+        )
     ):
 
         print(
@@ -1245,9 +1602,8 @@ def main():
             "\nReusing existing compatible V2 index."
         )
 
-
     # --------------------------------------------------------
-    # Generate candidate pairs
+    # Generate candidates
     # --------------------------------------------------------
 
     generate_candidates(
@@ -1256,6 +1612,7 @@ def main():
         name_counts,
         address_counts,
         args.s1_limit,
+        s1_ids,
     )
 
 

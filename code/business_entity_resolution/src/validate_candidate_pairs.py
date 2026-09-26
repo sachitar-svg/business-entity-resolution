@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CANDIDATE_PATH = (
     PROJECT_ROOT
     / "output"
-    / "candidate_pairs_test.tsv"
+    / "candidate_pairs_benchmark_sample.tsv"
 )
 
 GROUND_TRUTH_PATH = (

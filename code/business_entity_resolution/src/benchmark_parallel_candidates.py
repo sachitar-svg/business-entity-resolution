@@ -1,7 +1,7 @@
 from pathlib import Path
 import sqlite3
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import pyarrow.parquet as pq
@@ -247,7 +247,7 @@ def main():
     # Parallel processing
     # --------------------------------------------------------
 
-    with ProcessPoolExecutor(
+    with ThreadPoolExecutor(
         max_workers=WORKERS,
         initializer=initialize_worker,
     ) as executor:

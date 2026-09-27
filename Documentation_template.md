@@ -38,23 +38,7 @@ Core Innovation: A scalable disk-backed V2 blocking layer combined with leakage-
 
 The overall development pipeline is:
 
-Raw business records
-        ↓
-Unicode-safe normalization
-        ↓
-Token-frequency statistics
-        ↓
-V2 candidate blocking
-        ↓
-Candidate pairs
-        ↓
-13 pairwise matching features
-        ↓
-Leakage-safe supervised training
-        ↓
-Tree-based matching model
-        ↓
-Threshold-based match decision
+Raw business records -> Unicode-safe normalization -> Token-frequency statistics -> V2 candidate blocking -> Candidate pairs -> 13 pairwise matching features -> Leakage-safe supervised training -> Tree-based matching model -> Threshold-based match decision
 
 ---
 

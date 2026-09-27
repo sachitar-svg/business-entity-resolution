@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from preprocessing import normalize_name, normalize_address
+from src.preprocessing import normalize_name, normalize_address
 
 
 # -------------------------------------------------

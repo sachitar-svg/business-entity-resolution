@@ -2,8 +2,8 @@ import re
 
 import pandas as pd
 
-from preprocessing import normalize_name, normalize_address
-from similarity import name_similarity, address_similarity
+from src.preprocessing import normalize_name, normalize_address
+from src.similarity import name_similarity, address_similarity
 
 
 # --------------------------------------------------

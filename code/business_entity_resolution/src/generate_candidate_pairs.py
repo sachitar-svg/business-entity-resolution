@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 
 
 # ============================================================
-# CONFIGURATION
+# PROJECT PATHS
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +20,19 @@ NORMALIZED_DIR = (
     / "output"
     / "normalized"
 )
+
+TOKEN_STATS_DIR = (
+    PROJECT_ROOT
+    / "code"
+    / "business_entity_resolution"
+    / "data"
+    / "token_stats"
+)
+
+
+# ============================================================
+# DEFAULT TRAIN PATHS
+# ============================================================
 
 SOURCE1_PATH = (
     NORMALIZED_DIR
@@ -34,14 +47,6 @@ SOURCE2_PATH = (
 SOURCE3_PATH = (
     NORMALIZED_DIR
     / "train_source3_normalized.parquet"
-)
-
-TOKEN_STATS_DIR = (
-    PROJECT_ROOT
-    / "code"
-    / "business_entity_resolution"
-    / "data"
-    / "token_stats"
 )
 
 NAME_STATS_PATH = (
@@ -66,17 +71,17 @@ DEFAULT_OUTPUT_PATH = (
     / "candidate_pairs.tsv"
 )
 
-# This is the V2 threshold we actually benchmarked.
+
+# ============================================================
+# V2 CONFIGURATION
+# ============================================================
+
 SINGLE_TOKEN_MAX_FREQ = 10_000
 
-# Process Parquet files in chunks.
 PARQUET_BATCH_SIZE = 100_000
 
-# Number of rows inserted into SQLite per transaction.
 SQLITE_BATCH_SIZE = 5_000
 
-# Version used to verify that an existing index matches
-# the current blocking configuration.
 INDEX_VERSION = "v2_2026_09"
 
 
@@ -198,7 +203,7 @@ def build_block_terms(
     address_counts,
 ):
     """
-    Build the exact V2 blocking channels.
+    Build the exact validated V2 blocking channels.
 
     Channels:
 
@@ -210,9 +215,6 @@ def build_block_terms(
     6. Top-two / pair-based address key
 
     Numeric blocking is intentionally NOT included.
-
-    Relaxed 25k/50k address rules are also intentionally
-    NOT included.
     """
 
     terms = set()
@@ -223,16 +225,12 @@ def build_block_terms(
 
     if norm_name:
 
-        exact_key = (
+        terms.add(
             "nexact_"
             + norm_name.replace(
                 " ",
                 "_"
             )
-        )
-
-        terms.add(
-            exact_key
         )
 
     # --------------------------------------------------------
@@ -241,13 +239,9 @@ def build_block_terms(
 
     if compact_name:
 
-        compact_key = (
+        terms.add(
             "ncompact_"
             + compact_name
-        )
-
-        terms.add(
-            compact_key
         )
 
     # --------------------------------------------------------
@@ -454,6 +448,10 @@ def build_index(
     index_path,
     name_counts,
     address_counts,
+    source2_path,
+    source3_path,
+    name_stats_path,
+    address_stats_path,
 ):
     """
     Build the disk-backed SQLite/FTS5 V2 index.
@@ -472,9 +470,25 @@ def build_index(
         "=" * 70
     )
 
+    print(
+        f"\nSource 2: {source2_path}"
+    )
+
+    print(
+        f"Source 3: {source3_path}"
+    )
+
+    print(
+        f"Name stats: {name_stats_path}"
+    )
+
+    print(
+        f"Address stats: {address_stats_path}"
+    )
+
     index_path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     remove_old_index(
@@ -509,11 +523,11 @@ def build_index(
 
         for source_path, source_label in [
             (
-                SOURCE2_PATH,
+                source2_path,
                 "Source 2",
             ),
             (
-                SOURCE3_PATH,
+                source3_path,
                 "Source 3",
             ),
         ]:
@@ -713,32 +727,32 @@ def build_index(
 
             "source2_size":
                 str(
-                    SOURCE2_PATH.stat().st_size
+                    source2_path.stat().st_size
                 ),
 
             "source3_size":
                 str(
-                    SOURCE3_PATH.stat().st_size
+                    source3_path.stat().st_size
                 ),
 
             "source2_mtime":
                 str(
-                    SOURCE2_PATH.stat().st_mtime_ns
+                    source2_path.stat().st_mtime_ns
                 ),
 
             "source3_mtime":
                 str(
-                    SOURCE3_PATH.stat().st_mtime_ns
+                    source3_path.stat().st_mtime_ns
                 ),
 
             "name_stats_mtime":
                 str(
-                    NAME_STATS_PATH.stat().st_mtime_ns
+                    name_stats_path.stat().st_mtime_ns
                 ),
 
             "address_stats_mtime":
                 str(
-                    ADDRESS_STATS_PATH.stat().st_mtime_ns
+                    address_stats_path.stat().st_mtime_ns
                 ),
 
             "candidate_count":
@@ -775,10 +789,17 @@ def build_index(
         connection.close()
 
 
-def index_is_valid(index_path):
+def index_is_valid(
+    index_path,
+    source2_path,
+    source3_path,
+    name_stats_path,
+    address_stats_path,
+):
     """
     Check whether the existing SQLite index matches
-    the current V2 configuration and source files.
+    the current V2 configuration, source files, and
+    token-statistics files.
     """
 
     if not index_path.exists():
@@ -814,32 +835,32 @@ def index_is_valid(index_path):
 
             "source2_size":
                 str(
-                    SOURCE2_PATH.stat().st_size
+                    source2_path.stat().st_size
                 ),
 
             "source3_size":
                 str(
-                    SOURCE3_PATH.stat().st_size
+                    source3_path.stat().st_size
                 ),
 
             "source2_mtime":
                 str(
-                    SOURCE2_PATH.stat().st_mtime_ns
+                    source2_path.stat().st_mtime_ns
                 ),
 
             "source3_mtime":
                 str(
-                    SOURCE3_PATH.stat().st_mtime_ns
+                    source3_path.stat().st_mtime_ns
                 ),
 
             "name_stats_mtime":
                 str(
-                    NAME_STATS_PATH.stat().st_mtime_ns
+                    name_stats_path.stat().st_mtime_ns
                 ),
 
             "address_stats_mtime":
                 str(
-                    ADDRESS_STATS_PATH.stat().st_mtime_ns
+                    address_stats_path.stat().st_mtime_ns
                 ),
         }
 
@@ -884,8 +905,7 @@ def build_query(
     address_counts,
 ):
     """
-    Build the same six V2 query channels used by
-    the Source-1 side.
+    Build the same six V2 query channels.
     """
 
     terms = build_block_terms(
@@ -909,13 +929,87 @@ def fetch_candidates(
     connection,
     match_query,
     country,
+    top_k=None,
 ):
     """
-    Query FTS and apply the final V2 country filter.
+    Query V2 candidates.
+
+    For TOP-K mode, use the country-aware FTS table.
+    Country filtering happens inside FTS.
+
+    BM25 scoring uses:
+        country weight   = 0
+        block_text weight = 1
+
+    Therefore country is a filter only and does not
+    contribute to the ranking score.
     """
 
     if not match_query:
         return []
+
+    # --------------------------------------------------------
+    # TOP-K mode
+    # --------------------------------------------------------
+
+    if top_k is not None:
+
+        country = clean_country(
+            country
+        )
+
+        if country:
+
+            country_token = (
+                "country_"
+                + country
+            )
+
+        else:
+
+            country_token = (
+                "country_missing"
+            )
+
+        ranked_query = (
+            '"'
+            + country_token
+            + '" AND ('
+            + match_query
+            + ')'
+        )
+
+        rows = connection.execute(
+            """
+            SELECT
+                c.entity_id
+            FROM block_fts_country AS f
+            INNER JOIN candidate_records AS c
+                ON c.rowid = f.rowid
+            WHERE block_fts_country MATCH ?
+            ORDER BY
+                bm25(
+                    block_fts_country,
+                    0.0,
+                    1.0
+                ) ASC,
+                c.entity_id ASC
+            LIMIT ?
+            """,
+            (
+                ranked_query,
+                top_k,
+            ),
+        ).fetchall()
+
+        return [
+            row[0]
+            for row in rows
+        ]
+
+    # --------------------------------------------------------
+    # Full V2 mode
+    # --------------------------------------------------------
 
     rows = connection.execute(
         """
@@ -937,6 +1031,7 @@ def fetch_candidates(
         row[0]
         for row in rows
     ]
+  
 
 
 # ============================================================
@@ -948,7 +1043,6 @@ def load_s1_ids(ids_path):
     Load exact Source-1 entity IDs from a CSV file.
 
     Expected column:
-
         s1_id
     """
 
@@ -1011,21 +1105,30 @@ def generate_candidates(
     output_path,
     name_counts,
     address_counts,
+    source1_path,
     s1_limit,
     s1_ids=None,
+    top_k=None,
 ):
     """
     Generate candidate entity IDs for Source 1.
 
-    Two modes are supported:
+    Two S1 selection modes:
 
     1. Normal mode:
        Process the first --s1-limit rows.
 
     2. Exact-ID mode:
-       When s1_ids is supplied, process ONLY those
-       Source-1 entity IDs. This mode takes priority over
-       --s1-limit.
+       Process ONLY the supplied S1 IDs.
+
+    Candidate retrieval modes:
+
+    1. Full mode:
+       Return all V2 candidates.
+
+    2. TOP-K mode:
+       Rank candidates using FTS5 BM25 and return
+       only the strongest K candidates.
     """
 
     connection = sqlite3.connect(
@@ -1072,7 +1175,7 @@ def generate_candidates(
         # ----------------------------------------------------
 
         parquet_file = pq.ParquetFile(
-            SOURCE1_PATH
+            source1_path
         )
 
         with open(
@@ -1117,10 +1220,6 @@ def generate_candidates(
 
                     # ------------------------------------------------
                     # EXACT-ID MODE
-                    # ------------------------------------------------
-                    #
-                    # When an exact list is supplied, skip every
-                    # Source-1 row not present in that list.
                     # ------------------------------------------------
 
                     if target_s1_ids is not None:
@@ -1179,11 +1278,11 @@ def generate_candidates(
                         connection,
                         match_query,
                         country,
+                        top_k,
                     )
 
                     # ------------------------------------------------
-                    # Remove duplicates and sort for deterministic
-                    # output.
+                    # Deterministic output
                     # ------------------------------------------------
 
                     candidates = sorted(
@@ -1195,7 +1294,7 @@ def generate_candidates(
                         zero_candidate_s1 += 1
 
                     # ------------------------------------------------
-                    # Write required candidate-pair format
+                    # Write required candidate format
                     # ------------------------------------------------
 
                     output_file.write(
@@ -1212,7 +1311,7 @@ def generate_candidates(
                     total_s1 += 1
 
                     # ------------------------------------------------
-                    # Track exact IDs that have been processed.
+                    # Track processed exact IDs
                     # ------------------------------------------------
 
                     if target_s1_ids is not None:
@@ -1255,7 +1354,7 @@ def generate_candidates(
                     break
 
                 # ----------------------------------------------------
-                # NORMAL --s1-limit STOP CONDITION
+                # NORMAL LIMIT STOP
                 # ----------------------------------------------------
 
                 if (
@@ -1359,6 +1458,20 @@ def generate_candidates(
             f"{zero_candidate_s1:,}"
         )
 
+        if top_k is None:
+
+            print(
+                "Candidate retrieval        : "
+                "FULL V2"
+            )
+
+        else:
+
+            print(
+                f"Candidate retrieval        : "
+                f"TOP-{top_k:,}"
+            )
+
         print(
             f"Runtime                    : "
             f"{time.time() - start_time:.1f}s"
@@ -1444,7 +1557,89 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--source1",
+        type=str,
+        default=str(
+            SOURCE1_PATH
+        ),
+        help=(
+            "Source 1 normalized Parquet file."
+        ),
+    )
+
+    parser.add_argument(
+        "--source2",
+        type=str,
+        default=str(
+            SOURCE2_PATH
+        ),
+        help=(
+            "Source 2 normalized Parquet file."
+        ),
+    )
+
+    parser.add_argument(
+        "--source3",
+        type=str,
+        default=str(
+            SOURCE3_PATH
+        ),
+        help=(
+            "Source 3 normalized Parquet file."
+        ),
+    )
+
+    parser.add_argument(
+        "--name-stats",
+        type=str,
+        default=str(
+            NAME_STATS_PATH
+        ),
+        help=(
+            "Name token statistics JSON file."
+        ),
+    )
+
+    parser.add_argument(
+        "--address-stats",
+        type=str,
+        default=str(
+            ADDRESS_STATS_PATH
+        ),
+        help=(
+            "Address token statistics JSON file."
+        ),
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help=(
+            "Keep only the top K candidates per S1 "
+            "after FTS5 BM25 ranking. "
+            "Omit this option for full V2 candidates."
+        ),
+    )
+
     args = parser.parse_args()
+
+    # --------------------------------------------------------
+    # Validate TOP-K
+    # --------------------------------------------------------
+
+    if args.top_k is not None:
+
+        if args.top_k <= 0:
+
+            raise ValueError(
+                "--top-k must be greater than 0."
+            )
+
+    # --------------------------------------------------------
+    # Convert paths
+    # --------------------------------------------------------
 
     output_path = Path(
         args.output
@@ -1452,6 +1647,26 @@ def main():
 
     index_path = Path(
         args.index
+    )
+
+    source1_path = Path(
+        args.source1
+    )
+
+    source2_path = Path(
+        args.source2
+    )
+
+    source3_path = Path(
+        args.source3
+    )
+
+    name_stats_path = Path(
+        args.name_stats
+    )
+
+    address_stats_path = Path(
+        args.address_stats
     )
 
     # --------------------------------------------------------
@@ -1473,11 +1688,11 @@ def main():
     # --------------------------------------------------------
 
     required_files = [
-        SOURCE1_PATH,
-        SOURCE2_PATH,
-        SOURCE3_PATH,
-        NAME_STATS_PATH,
-        ADDRESS_STATS_PATH,
+        source1_path,
+        source2_path,
+        source3_path,
+        name_stats_path,
+        address_stats_path,
     ]
 
     for path in required_files:
@@ -1505,9 +1720,47 @@ def main():
     )
 
     print(
+        f"Source 1               : "
+        f"{source1_path}"
+    )
+
+    print(
+        f"Source 2               : "
+        f"{source2_path}"
+    )
+
+    print(
+        f"Source 3               : "
+        f"{source3_path}"
+    )
+
+    print(
+        f"Name stats             : "
+        f"{name_stats_path}"
+    )
+
+    print(
+        f"Address stats          : "
+        f"{address_stats_path}"
+    )
+
+    print(
         f"Token threshold        : "
         f"{SINGLE_TOKEN_MAX_FREQ:,}"
     )
+
+    if args.top_k is None:
+
+        print(
+            "Candidate retrieval    : FULL V2"
+        )
+
+    else:
+
+        print(
+            f"Candidate retrieval    : "
+            f"TOP-{args.top_k:,}"
+        )
 
     if s1_ids is not None:
 
@@ -1546,7 +1799,7 @@ def main():
     # --------------------------------------------------------
 
     with open(
-        NAME_STATS_PATH,
+        name_stats_path,
         "r",
         encoding="utf-8",
     ) as file:
@@ -1556,7 +1809,7 @@ def main():
         )
 
     with open(
-        ADDRESS_STATS_PATH,
+        address_stats_path,
         "r",
         encoding="utf-8",
     ) as file:
@@ -1576,13 +1829,17 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Build or reuse SQLite/FTS5 index
+    # Build or reuse SQLite index
     # --------------------------------------------------------
 
     if (
         args.rebuild_index
         or not index_is_valid(
-            index_path
+            index_path,
+            source2_path,
+            source3_path,
+            name_stats_path,
+            address_stats_path,
         )
     ):
 
@@ -1594,6 +1851,10 @@ def main():
             index_path,
             name_counts,
             address_counts,
+            source2_path,
+            source3_path,
+            name_stats_path,
+            address_stats_path,
         )
 
     else:
@@ -1611,8 +1872,10 @@ def main():
         output_path,
         name_counts,
         address_counts,
+        source1_path,
         args.s1_limit,
         s1_ids,
+        args.top_k,
     )
 
 
